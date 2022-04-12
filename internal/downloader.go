@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -16,6 +15,7 @@ import (
 	"path"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +23,16 @@ import (
 )
 
 var pb *progressbar.ProgressBar
+
+type GDVersion struct {
+	Major byte
+	Minor byte
+	Patch byte
+}
+
+func (v *GDVersion) String() string {
+	return fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch)
+}
 
 // file downloader
 type downloader struct {
@@ -33,12 +43,26 @@ type downloader struct {
 func (d *downloader) Download(ctx context.Context, dUrl, fileName string) error {
 	if fileName == "" {
 		fileName = path.Base(dUrl)
+		fUrl, err := url.Parse(fileName)
+		if err != nil {
+			hashStr, err := getUrlHash(dUrl)
+			if err != nil {
+				fileName = fmt.Sprintf("%d", time.Now().UnixNano())
+			} else {
+				fileName = hashStr
+			}
+		} else {
+			fileName = fUrl.Path
+		}
 	}
 	resp, err := http.DefaultClient.Head(dUrl)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode == 200 && resp.Header.Get("Accept-Ranges") == "bytes" {
+	contentType := strings.ToUpper(resp.Header.Get("Content-Type"))
+	if resp.StatusCode == 200 &&
+		resp.Header.Get("Accept-Ranges") == "bytes" &&
+		contentType == strings.ToUpper("application/octet-stream") {
 		return multipartDownload(ctx, dUrl, fileName, d.concurrency, int(resp.ContentLength), d.proxy)
 	} else {
 		return singleDownload(ctx, dUrl, fileName, d.proxy)
@@ -97,19 +121,12 @@ func downloadPartFile(ctx context.Context, dUrl, fileName string, index int, sta
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	client := newHttpClient(proxy, 10*time.Minute)
 	resp, err := client.Do(req)
-	//resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
-
 	defer resp.Body.Close()
 	if resp.StatusCode != 206 {
 		fmt.Println("part request status:", resp.StatusCode)
-		bodyBuff, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		fmt.Println(string(bodyBuff))
 		return errors.New("invalid status")
 	}
 	folderName, err := getUrlHash(dUrl)

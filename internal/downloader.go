@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,11 +11,13 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"runtime"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 )
@@ -24,7 +27,7 @@ var pb *progressbar.ProgressBar
 // file downloader
 type downloader struct {
 	concurrency int
-	proxy       string
+	proxy       *url.URL
 }
 
 func (d *downloader) Download(ctx context.Context, dUrl, fileName string) error {
@@ -36,14 +39,30 @@ func (d *downloader) Download(ctx context.Context, dUrl, fileName string) error 
 		return err
 	}
 	if resp.StatusCode == 200 && resp.Header.Get("Accept-Ranges") == "bytes" {
-		return multipartDownload(ctx, dUrl, fileName, d.concurrency, int(resp.ContentLength))
+		return multipartDownload(ctx, dUrl, fileName, d.concurrency, int(resp.ContentLength), d.proxy)
 	} else {
-		return singleDownload(ctx, dUrl, fileName)
+		return singleDownload(ctx, dUrl, fileName, d.proxy)
 	}
 }
 
 // singleDownload 单线程下载文件
-func singleDownload(ctx context.Context, dUrl, fileName string) error {
+func singleDownload(ctx context.Context, dUrl, fileName string, proxy *url.URL) error {
+	client := newHttpClient(proxy, 10*time.Minute)
+	req, err := http.NewRequest(http.MethodGet, dUrl, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	pb = progressbar.DefaultBytes(
+		resp.ContentLength,
+		"downloading",
+	)
+	defer f.Close()
+	io.Copy(io.MultiWriter(f, pb), resp.Body)
 	return nil
 }
 
@@ -70,13 +89,15 @@ func getUrlHash(dUrl string) (string, error) {
 	h.Write([]byte(dUrl))
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-func downloadPartFile(ctx context.Context, dUrl, fileName string, index int, start, end int) error {
+func downloadPartFile(ctx context.Context, dUrl, fileName string, index int, start, end int, proxy *url.URL) error {
 	req, err := http.NewRequest("GET", dUrl, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
-	resp, err := http.DefaultClient.Do(req)
+	client := newHttpClient(proxy, 10*time.Minute)
+	resp, err := client.Do(req)
+	//resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -118,9 +139,20 @@ func downloadPartFile(ctx context.Context, dUrl, fileName string, index int, sta
 	}
 	return nil
 }
+func newHttpClient(proxy *url.URL, timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: false,
+			},
+			Proxy: http.ProxyURL(proxy),
+		},
+	}
+}
 
 // multipartDownload 并发下载文件
-func multipartDownload(ctx context.Context, dUrl, fileName string, concurrency, size int) error {
+func multipartDownload(ctx context.Context, dUrl, fileName string, concurrency, size int, proxy *url.URL) error {
 	partSize := size / concurrency
 	if pb == nil {
 		pb = NewProgressBar(size, fileName)
@@ -133,7 +165,7 @@ func multipartDownload(ctx context.Context, dUrl, fileName string, concurrency, 
 			end = size
 		}
 		go func(fno, s, e int) {
-			err := downloadPartFile(ctx, dUrl, fileName, fno, s, e)
+			err := downloadPartFile(ctx, dUrl, fileName, fno, s, e, proxy)
 			if err != nil {
 				log.Fatalf("download part file error:%v \n", err)
 			}
@@ -196,7 +228,18 @@ func NewDownloader(concurrency int, proxy string) *downloader {
 	if concurrency < 1 {
 		concurrency = runtime.NumCPU()
 	}
-	return &downloader{
-		concurrency, proxy,
+	if proxy != "" {
+		proxyUrl, err := url.Parse(proxy)
+		if err != nil {
+			panic(err)
+		}
+		return &downloader{
+			concurrency, proxyUrl,
+		}
+	} else {
+		return &downloader{
+			concurrency, nil,
+		}
 	}
+
 }

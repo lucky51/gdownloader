@@ -20,6 +20,6 @@ func main() {
 	if url == "" {
 		log.Fatal("request url is required \n")
 	}
-	dw := internal.NewDownloader(concurrency, "")
+	dw := internal.NewDownloader(concurrency, proxy)
 	dw.Download(context.Background(), url, "")
 }

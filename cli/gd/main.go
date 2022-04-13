@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"time"
 
 	"github.com/lucky51/gdownloader/internal"
 	"github.com/spf13/cobra"
@@ -13,10 +14,11 @@ import (
 var proxy string
 var dUrl string
 var concurrency int
-
+var retry int
+var timeout time.Duration
 var rootCMD = &cobra.Command{
 	Short:   "a simple downloader",
-	Version: "v0.1.0",
+	Version: "v0.1.1",
 	Run: func(cmd *cobra.Command, args []string) {
 		if dUrl == "" {
 			cmd.Help()
@@ -27,7 +29,7 @@ var rootCMD = &cobra.Command{
 			fmt.Println("invalid url:", dUrl)
 			return
 		}
-		dw := internal.NewDownloader(concurrency, proxy)
+		dw := internal.NewDownloader(concurrency, retry, timeout, proxy)
 		dw.Download(context.Background(), dUrl, "")
 	},
 }
@@ -35,7 +37,9 @@ var rootCMD = &cobra.Command{
 func init() {
 	rootCMD.Flags().StringVarP(&proxy, "proxy", "p", "", "request proxy")
 	rootCMD.Flags().StringVarP(&dUrl, "url", "u", "", "request url")
-	rootCMD.Flags().IntVarP(&concurrency, "concurrency", "c", 0, "concurrency")
+	rootCMD.Flags().IntVarP(&concurrency, "concurrency", "c", 0, "concurrency ,default runtime.NumCPU")
+	rootCMD.Flags().IntVarP(&retry, "retry", "r", 3, "retry times")
+	rootCMD.Flags().DurationVarP(&timeout, "timeout", "t", time.Minute*10, "request timeout ，default 10 minutes (10m)")
 }
 func main() {
 	err := rootCMD.Execute()

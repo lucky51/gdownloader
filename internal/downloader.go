@@ -70,8 +70,6 @@ func (d *downloader) Download(ctx context.Context, dUrl, fileName string) error 
 		resp.Header.Get("Accept-Ranges") == "bytes" && resp.ContentLength > 1024*100 {
 		return d.multipartDownload(ctx, dUrl, fileName, resp.ContentLength)
 	} else {
-		ctx, cancelFunc := context.WithTimeout(ctx, d.timeout)
-		defer cancelFunc()
 		return d.singleDownload(ctx, dUrl, fileName, d.proxy)
 	}
 }

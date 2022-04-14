@@ -18,7 +18,7 @@ var retry int
 var timeout time.Duration
 var rootCMD = &cobra.Command{
 	Short:   "a simple downloader",
-	Version: "v0.1.1",
+	Version: "v0.1.2",
 	Run: func(cmd *cobra.Command, args []string) {
 		if dUrl == "" {
 			cmd.Help()
@@ -39,7 +39,7 @@ func init() {
 	rootCMD.Flags().StringVarP(&dUrl, "url", "u", "", "request url")
 	rootCMD.Flags().IntVarP(&concurrency, "concurrency", "c", 0, "concurrency ,default runtime.NumCPU")
 	rootCMD.Flags().IntVarP(&retry, "retry", "r", 3, "retry times")
-	rootCMD.Flags().DurationVarP(&timeout, "timeout", "t", time.Minute*10, "request timeout ，default 10 minutes (10m)")
+	rootCMD.Flags().DurationVarP(&timeout, "timeout", "t", 0, "request timeout ，default no timeout")
 }
 func main() {
 	err := rootCMD.Execute()

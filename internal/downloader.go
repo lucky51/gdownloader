@@ -72,13 +72,13 @@ func (d *downloader) Download(ctx context.Context, dUrl, fileName string) error 
 	} else {
 		ctx, cancelFunc := context.WithTimeout(ctx, d.timeout)
 		defer cancelFunc()
-		return singleDownload(ctx, dUrl, fileName, d.proxy)
+		return d.singleDownload(ctx, dUrl, fileName, d.proxy)
 	}
 }
 
 // singleDownload 单线程下载文件
-func singleDownload(ctx context.Context, dUrl, fileName string, proxy *url.URL) error {
-	client := newHttpClient(proxy)
+func (d *downloader) singleDownload(ctx context.Context, dUrl, fileName string, proxy *url.URL) error {
+	client := newHttpClient(proxy, d.timeout)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dUrl, nil)
 	if err != nil {
 		return err
@@ -123,45 +123,45 @@ func genPartPath(folderName string, partIndex int, fileName string, start, end i
 	fileName = strings.ReplaceAll(fileName, ".", "_")
 	return fmt.Sprintf("%s/part%d-%s-%d-%d", folderName, partIndex, fileName, start, end)
 }
-func downloadPartFile(ctx context.Context, dUrl, filePath string, index int, start, end int64, proxy *url.URL) error {
+func (d *downloader) downloadPartFile(ctx context.Context, dUrl, filePath string, index int, start, end int64, proxy *url.URL) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", dUrl, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
-	client := newHttpClient(proxy)
+	client := newHttpClient(proxy, d.timeout)
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 206 {
 		fmt.Println("part request status:", resp.StatusCode)
-		return errors.New("invalid status")
+		return 0, errors.New("invalid status")
 	}
 	//partPath := genPartPath(folderName, index, fileName, start, end)
 	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND, 0666)
 
 	if err != nil {
 		fmt.Printf("OpenFile %v \n", err.Error())
-		return err
+		return 0, err
 	}
 	defer f.Close()
-	_, err = io.Copy(io.MultiWriter(f, pb), resp.Body)
+	writen, err := io.Copy(io.MultiWriter(f, pb), resp.Body)
 
 	if err != nil {
 		if err == io.EOF {
-			return nil
+			return writen, nil
 		}
 		if err != nil {
 			fmt.Printf("io Copy %v \n", err.Error())
-			return err
+			return writen, err
 		}
-		return err
+		return writen, err
 	}
-	return nil
+	return writen, nil
 }
-func newHttpClient(proxy *url.URL) *http.Client {
+func newHttpClient(proxy *url.URL, timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -169,6 +169,7 @@ func newHttpClient(proxy *url.URL) *http.Client {
 			},
 			Proxy: http.ProxyURL(proxy),
 		},
+		Timeout: timeout,
 	}
 }
 func deleteExistUnCompletedPart(fPath string) bool {
@@ -220,19 +221,18 @@ func (d *downloader) multipartDownload(ctx context.Context, dUrl, fileName strin
 		partPath := genPartPath(folderName, i, fileName, start, end)
 		if !deleteExistUnCompletedPart(partPath) {
 			go func(fno int, s, e int64) {
-			retry:
-				ctx, cancelFunc := context.WithTimeout(ctx, d.timeout)
-				defer cancelFunc()
-				err := downloadPartFile(ctx, dUrl, partPath, fno, s, e, d.proxy)
 				var r float64 = 0
+			retry:
+				writen, err := d.downloadPartFile(ctx, dUrl, partPath, fno, s, e, d.proxy)
 				if err != nil {
 					log.Printf("download part file %s error:%v \n", partPath, err)
 					if int(r) < d.retry {
 						nextReq := time.Duration(math.Pow(2, r))
-						fmt.Printf("retry after %d sec. \n", int(math.Pow(2, r)))
-						<-time.After(time.Second * nextReq)
+						fmt.Printf("retry after %d sec. \n", nextReq)
+						<-time.After(nextReq * time.Second)
 						r++
 						os.Remove(partPath)
+						pb.Add64(-writen)
 						goto retry
 					}
 					log.Fatalln("download failed!")

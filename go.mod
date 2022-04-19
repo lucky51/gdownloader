@@ -5,10 +5,12 @@ go 1.17
 require (
 	github.com/schollz/progressbar/v3 v3.8.6
 	github.com/spf13/cobra v1.4.0
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	gopkg.in/elazarl/goproxy.v1 v1.0.0-20180725130230-947c36da3153
 )
 
 require (
+	github.com/elazarl/goproxy v0.0.0-20220417044921-416226498f94 // indirect
+	github.com/elazarl/goproxy/ext v0.0.0-20190711103511-473e67f1d7d2 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect

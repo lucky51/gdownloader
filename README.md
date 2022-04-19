@@ -8,6 +8,7 @@ a simple downloader
 go install github.com/lucky51/gdownloader/cli/gd@latest
 gd --url https://download-cdn.jetbrains.com/go/goland-2021.3.4.exe --proxy socks5://127.0.0.1:10808 --timeout 10m --retry 3
 
+gd bridge --proxy http://127.0.0.1:7890 -p 8089   //listen local port 8089  
 ```
 
 for windows ANSI Color 
@@ -18,3 +19,4 @@ for windows ANSI Color
 
 * [cobra A Commander for modern Go CLI interactions](https://github.com/spf13/cobra)
 * [A really basic thread-safe progress bar for Golang applications](https://github.com/schollz/progressbar)
+* [An HTTP proxy library for Go](https://github.com/elazarl/goproxy)

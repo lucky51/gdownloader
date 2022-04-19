@@ -19,7 +19,7 @@ var retry int
 var timeout time.Duration
 var rootCMD = &cobra.Command{
 	Short:   "a simple downloader",
-	Version: "v0.1.2",
+	Version: "v0.1.3",
 	Run: func(cmd *cobra.Command, args []string) {
 		if dUrl == "" {
 			cmd.Help()
